@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <rect x="0" y="0" width="800" height="500" fill="#f5f5f5" stroke="#ddd" />
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="20" fill="#888">
+    Upload your venue.svg here
+  </text>
+  <!-- 範例攤位區塊，之後請用真實平面圖取代 -->
+  <g id="A12">
+    <rect x="100" y="120" width="80" height="60" fill="#cfe8ff" stroke="#3b82f6" />
+    <text x="140" y="150" text-anchor="middle" font-size="12">A12</text>
+  </g>
+</svg>

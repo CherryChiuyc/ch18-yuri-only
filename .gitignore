@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# production build output
+dist/
+
+# Astro / Vite / build caches
+.astro/
+.vite/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# system files
+.DS_Store
+Thumbs.db
+
+# editor settings
+.vscode/
+.idea/
+
+# optional: env files (若之後有加密金鑰或私密設定)
+.env
+.env.*.local
