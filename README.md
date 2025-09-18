@@ -1,4 +1,4 @@
-# CH18 攤位地圖（Astro + Cloudflare Pages）
+# CH18 百合向ONLY攤位地圖（Astro + Cloudflare Pages）
 
 ## 快速開始（本機）
 1. 安裝 Node.js 18 以上（建議 20）。
