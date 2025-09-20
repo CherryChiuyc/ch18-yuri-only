@@ -1,15 +1,15 @@
 // src/components/BoothInfoPanel.tsx
-import React from "react";
+import type { BoothRow } from "../lib/loadStalls";
 
 type Props = {
-  spotId: string | null;
+  booth: BoothRow | null;
   error?: string | null;
   onClose?: () => void;   // 手機彈窗用
   variant?: "desktop" | "mobile";
 };
 
 export default function BoothInfoPanel({
-  spotId,
+  booth,
   error,
   onClose,
   variant = "desktop",
@@ -18,10 +18,44 @@ export default function BoothInfoPanel({
     <>
       {error ? (
         <p className="text-red-600">{error}</p>
-      ) : spotId ? (
-        <p className="text-gray-900">
-          你選取的攤位是：<strong>{spotId}</strong>
-        </p>
+      ) : booth ? (
+        <div className="space-y-3">
+          {/* 社團名稱：大標題（可點） */}
+          {booth.name && (
+            booth.url ? (
+              <a
+                href={booth.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block font-bold text-2xl md:text-3xl text-gray-900 leading-tight underline underline-offset-4 hover:text-blue-700"
+                title={booth.name}
+              >
+                {booth.name}
+              </a>
+            ) : (
+              <h2 className="font-bold text-2xl md:text-3xl text-gray-900 leading-tight">
+                {booth.name}
+              </h2>
+            )
+          )}
+
+          {/* 攤位編號：次要資訊 */}
+          <div className="text-base md:text-lg text-gray-700">
+            攤位編號：<span className="font-mono">{booth.rawId || booth.id}</span>
+          </div>
+          <div className="mt-3">
+            <img
+                src={`/event_pics/${(booth.rawId || booth.id).toUpperCase()}.jpg`}
+                alt={booth.name || booth.rawId}
+                className="rounded-lg w-full max-h-[500px] object-contain"
+                onError={(e) => {
+                // 如果找不到 jpg，可以試 png
+                (e.currentTarget as HTMLImageElement).src =
+                    `/event_pics/${(booth.rawId || booth.id).toUpperCase()}.png`;
+                }}
+            />
+          </div>
+        </div>
       ) : (
         <p className="text-gray-500">請點地圖上的攤位查看資訊。</p>
       )}
