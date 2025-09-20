@@ -1,6 +1,7 @@
 // src/components/Map.tsx
 import { useEffect, useRef, useState } from "react";
 import { loadStalls, type BoothMap } from "../lib/loadStalls";
+import BoothInfoPanel from "./BoothInfoPanel";
 
 export default function VenueMap() {
   const [svgHtml, setSvgHtml] = useState<string>("");
@@ -71,6 +72,17 @@ export default function VenueMap() {
         : `<div style="padding:1rem;color:#888;">載入場地圖中…</div>`);
 
     if (!svgHtml) return;
+
+    // 讓 <svg> 在容器內自適應，不要把右欄頂住
+    const svgEl = host.querySelector("svg") as SVGSVGElement | null;
+    if (svgEl) {
+      svgEl.removeAttribute("width");
+      svgEl.removeAttribute("height");
+      svgEl.style.width = "100%";
+      svgEl.style.height = "auto";
+      svgEl.style.display = "block";
+      svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    }
 
     const norm = (s: string | number | null | undefined) =>
       (s ?? "").toString().trim().toUpperCase();
@@ -166,41 +178,45 @@ export default function VenueMap() {
   }, [svgHtml, error, boothMap]); // 注意：不把 activeSpot 放入依賴，避免重寫 SVG
 
   return (
-    <div className="grid md:grid-cols-[1fr_360px] gap-4">
-      {/* 左側：地圖（SVG 由上面的 effect 寫入，不用 dangerouslySetInnerHTML） */}
-      <div ref={containerRef} className="bg-white rounded-2xl shadow p-2 min-h-[300px]" />
-
-      {/* 固定定位的 tooltip（不擋滑鼠事件） */}
+    <div className="
+      grid grid-cols-1
+      md:grid-cols-[minmax(0,7fr)_minmax(380px,3fr)]
+      xl:grid-cols-[minmax(0,8fr)_minmax(400px,3fr)]
+      2xl:grid-cols-[minmax(0,9fr)_minmax(420px,3fr)]
+      md:gap-x-5 gap-y-4
+    ">
+      {/* 左：地圖（加 overflow-hidden） */}
       <div
-        ref={tooltipRef}
-        className="fixed z-[9999] pointer-events-none px-2.5 py-1.5 rounded-lg shadow text-sm text-white"
-        style={{
-          background: "rgba(0,0,0,0.8)",
-          opacity: 0,
-          transition: "opacity 120ms ease",
-          left: 0,
-          top: 0,
-          maxWidth: "min(60vw, 24rem)",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-        role="tooltip"
-        aria-hidden="true"
+        ref={containerRef}
+        className="bg-white rounded-2xl shadow p-2 min-h-[300px] overflow-hidden"
       />
 
-      {/* 右側：資訊區 */}
-      <aside className="bg-white rounded-2xl shadow p-4">
-        {error ? (
-          <p className="text-red-600">{error}</p>
-        ) : activeSpot ? (
-          <p className="text-gray-900">
-            你選取的攤位是：<strong>{activeSpot}</strong>
-          </p>
-        ) : (
-          <p className="text-gray-500">請點地圖上的攤位查看資訊。</p>
-        )}
+      {/* 固定定位 tooltip（照舊） */}
+      <div ref={tooltipRef} className="fixed z-[9999] pointer-events-none px-2.5 py-1.5 rounded-lg shadow text-sm text-white"
+        style={{ background:"rgba(0,0,0,0.8)", opacity:0, transition:"opacity 120ms ease",
+                left:0, top:0, maxWidth:"min(60vw,24rem)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
+        role="tooltip" aria-hidden="true" />
+
+      {/* 桌面：右側固定資訊欄 */}
+      <aside className="hidden md:block">
+        <BoothInfoPanel spotId={activeSpot} error={error} />
       </aside>
+
+      {/* 手機：有選取時才顯示彈窗 + 背景可點關閉 */}
+      {activeSpot && (
+        <div className="md:hidden fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setActiveSpot(null)}
+          />
+          <BoothInfoPanel
+            spotId={activeSpot}
+            error={error}
+            onClose={() => setActiveSpot(null)}
+            variant="mobile"
+          />
+        </div>
+      )}
     </div>
   );
 }
