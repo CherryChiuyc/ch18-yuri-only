@@ -1,84 +1,219 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { Stall } from '../lib/loadStalls';
-import { loadStalls } from '../lib/loadStalls';
+// src/components/Map.tsx
+import { useEffect, useRef, useState } from "react";
+import { loadStalls, type BoothMap, type BoothRow } from "../lib/loadStalls";
+import BoothInfoPanel from "./BoothInfoPanel";
 
-export default function Map({ svgUrl, csvUrl }: { svgUrl: string; csvUrl?: string }) {
-  const [svgHtml, setSvgHtml] = useState<string>('');
-  const [stalls, setStalls] = useState<Stall[]>([]);
-  const bySpot = useMemo(() => Object.fromEntries(stalls.map(s => [s.map.spotId, s])), [stalls]);
-  const [active, setActive] = useState<Stall | null>(null);
+export default function VenueMap() {
+  const [svgHtml, setSvgHtml] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [activeSpot, setActiveSpot] = useState<string | null>(null);
+  const [boothMap, setBoothMap] = useState<BoothMap>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
+  // 讀取 SVG 並把互動樣式注入到 <svg> 內部
   useEffect(() => {
-    fetch(svgUrl).then(r => r.text()).then(setSvgHtml).catch(() => setError('無法載入場地地圖（SVG）。'));
-  }, [svgUrl]);
+    fetch("/map/venue.svg", { cache: "no-cache" })
+      .then((r) => {
+        if (!r.ok) throw new Error("SVG 載入失敗");
+        return r.text();
+      })
+      .then((raw) => setSvgHtml(injectStyle(raw)))
+      .catch(() => setError("無法載入場地地圖（SVG）。"));
+  }, []);
 
+  // 讀 CSV → 建立攤位對照表（含名稱與 URL）
   useEffect(() => {
-    if (!csvUrl) return;
-    loadStalls(csvUrl).then(setStalls).catch(() => setError('無法載入攤位資料（CSV）。'));
-  }, [csvUrl]);
+    loadStalls()
+      .then((m) => setBoothMap(m))
+      .catch((err) => console.warn(err));
+  }, []);
 
+  function injectStyle(src: string) {
+    const m = src.match(/<svg[\s\S]*?>/i);
+    if (!m || m.index == null) return src;
+    const head = m[0];
+    const insertAt = (m.index as number) + head.length;
+
+    const style = `
+      <style>
+        /* 只讓攤位可點，避免透明覆蓋攔截 */
+        svg *:not(rect) { pointer-events: none; }
+        rect[id] { pointer-events: auto; cursor: pointer; transition: fill 120ms ease; }
+        text { pointer-events: none; user-select: none; }
+        rect[id][fill="none"], rect[id]:not([fill]) { fill: #ffffff; }
+        rect[id]:hover { fill: #ffeb99 !important; }
+        rect[id][data-selected="true"],
+        rect[id][data-selected="true"]:hover { fill: #fdd835 !important; }
+      </style>
+    `;
+    return src.slice(0, insertAt) + style + src.slice(insertAt);
+  }
+
+  // 一次性掛載 SVG + 事件代理
   useEffect(() => {
+    const host = containerRef.current;
+    if (!host) return;
+
+    host.innerHTML =
+      svgHtml ||
+      (error
+        ? `<div style="padding:1rem;color:#c00;">${error}</div>`
+        : `<div style="padding:1rem;color:#888;">載入場地圖中…</div>`);
+
     if (!svgHtml) return;
-    const host = document.getElementById('venue-svg-host');
-    const svg = host?.querySelector('svg');
-    if (!svg) return;
 
-    Object.keys(bySpot).forEach((spotId) => {
-      const el = svg.querySelector<SVGGraphicsElement>(`#${CSS.escape(spotId)}`);
-      if (!el) return;
-      el.style.cursor = 'pointer';
-      const onClick = () => setActive(bySpot[spotId]);
-      el.addEventListener('click', onClick);
-      // 清理
-      (el as any).__cleanup = onClick;
-    });
+    // 讓 <svg> 在容器內自適應，不要把右欄頂住
+    const svgEl = host.querySelector("svg") as SVGSVGElement | null;
+    if (svgEl) {
+      svgEl.removeAttribute("width");
+      svgEl.removeAttribute("height");
+      svgEl.style.width = "100%";
+      svgEl.style.height = "auto";
+      svgEl.style.display = "block";
+      svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    }
+
+    const norm = (s: string | number | null | undefined) =>
+      (s ?? "").toString().trim().toUpperCase();
+
+    const getRectEl = (t: EventTarget | null) =>
+      (t as Element | null)?.closest("rect[id]") as SVGRectElement | null;
+
+    // 點擊：切換選取
+    const handleClick = (e: MouseEvent) => {
+      const rectEl = getRectEl(e.target);
+      if (!rectEl?.id) return;
+
+      const already = rectEl.getAttribute("data-selected") === "true";
+
+      // 清掉所有舊選取
+      host
+        .querySelectorAll<SVGRectElement>("rect[id][data-selected='true']")
+        .forEach((el) => el.removeAttribute("data-selected"));
+
+      if (already) {
+        setActiveSpot(null);
+      } else {
+        rectEl.setAttribute("data-selected", "true");
+        setActiveSpot(rectEl.id);
+      }
+    };
+
+    // hover：顯示社團名稱 tooltip
+    const tt = tooltipRef.current!;
+    const pad = 8;
+    const offset = 12;
+
+    function showTooltip(text: string) {
+      tt.textContent = text;
+      tt.style.opacity = "1";
+      tt.setAttribute("aria-hidden", "false");
+    }
+    function hideTooltip() {
+      tt.style.opacity = "0";
+      tt.setAttribute("aria-hidden", "true");
+    }
+    function place(x: number, y: number) {
+      const vpW = window.innerWidth;
+      const vpH = window.innerHeight;
+      tt.style.left = "0px";
+      tt.style.top = "0px";
+      tt.style.opacity = tt.style.opacity || "1";
+      const r = tt.getBoundingClientRect();
+      let left = x + offset;
+      let top = y + offset;
+      if (left + r.width + pad > vpW) left = x - r.width - offset;
+      if (top + r.height + pad > vpH) top = y - r.height - offset;
+      left = Math.max(pad, Math.min(left, vpW - r.width - pad));
+      top = Math.max(pad, Math.min(top, vpH - r.height - pad));
+      tt.style.left = `${left}px`;
+      tt.style.top = `${top}px`;
+    }
+
+    const handleOver = (e: MouseEvent) => {
+      const rectEl = getRectEl(e.target);
+      if (!rectEl?.id) return;
+      const key = norm(rectEl.id);
+      const row = boothMap.get(key);
+      const name = row?.name || `攤位：${key}`;
+      showTooltip(name);
+      place(e.clientX, e.clientY);
+    };
+    const handleMove = (e: MouseEvent) => {
+      if (tt.getAttribute("aria-hidden") === "true") return;
+      place(e.clientX, e.clientY);
+    };
+    const handleOut = () => hideTooltip();
+
+    host.addEventListener("click", handleClick);
+    host.addEventListener("mouseover", handleOver);
+    host.addEventListener("mousemove", handleMove);
+    host.addEventListener("mouseout", handleOut);
 
     return () => {
-      Object.keys(bySpot).forEach((spotId) => {
-        const el = svg.querySelector<SVGGraphicsElement>(`#${CSS.escape(spotId)}`);
-        const fn = (el as any)?.__cleanup;
-        if (el && fn) el.removeEventListener('click', fn);
-      });
+      host.removeEventListener("click", handleClick);
+      host.removeEventListener("mouseover", handleOver);
+      host.removeEventListener("mousemove", handleMove);
+      host.removeEventListener("mouseout", handleOut);
     };
-  }, [svgHtml, bySpot]);
+  }, [svgHtml, error, boothMap]); // 不把 activeSpot 放入依賴，避免重寫 SVG
+
+  const norm = (s: any) => (s ?? "").toString().trim().toUpperCase();
+  const booth: BoothRow | null = activeSpot
+    ? boothMap.get(norm(activeSpot)) ?? { id: norm(activeSpot), rawId: activeSpot }
+    : null;
 
   return (
-    <div className="grid md:grid-cols-[1fr_360px] gap-4">
-      <div id="venue-svg-host" className="bg-white rounded-2xl shadow p-2 min-h-[300px]" dangerouslySetInnerHTML={{ __html: svgHtml }} />
-      <aside className="bg-white rounded-2xl shadow p-4">
-        {!csvUrl ? (
-          <p className="text-gray-500">尚未設定資料來源，請在 Cloudflare Pages 的環境變數新增 <code>PUBLIC_CSV_URL</code>。</p>
-        ) : error ? (
-          <p className="text-red-600">{error}</p>
-        ) : active ? (
-          <StallCard stall={active} />
-        ) : (
-          <p className="text-gray-500">請點地圖上的攤位查看資訊。</p>
-        )}
+    <div className="
+      grid grid-cols-1
+      md:grid-cols-[minmax(0,7fr)_minmax(380px,3fr)]
+      xl:grid-cols-[minmax(0,8fr)_minmax(400px,3fr)]
+      2xl:grid-cols-[minmax(0,9fr)_minmax(420px,3fr)]
+      md:gap-x-5 gap-y-4
+    ">
+      {/* 左：地圖 */}
+      <div
+        ref={containerRef}
+        className="bg-white rounded-2xl shadow p-2 min-h-[300px] overflow-hidden"
+      />
+
+      {/* 固定定位 tooltip（hover 顯示社團名稱） */}
+      <div
+        ref={tooltipRef}
+        className="fixed z-[9999] pointer-events-none px-2.5 py-1.5 rounded-lg shadow text-sm text-white"
+        style={{
+          background: "rgba(0,0,0,0.8)",
+          opacity: 0,
+          transition: "opacity 120ms ease",
+          left: 0,
+          top: 0,
+          maxWidth: "min(60vw, 24rem)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+        role="tooltip"
+        aria-hidden="true"
+      />
+
+      {/* 桌面：右側固定資訊欄 */}
+      <aside className="hidden md:block">
+        <BoothInfoPanel booth={booth} error={error} />
       </aside>
-    </div>
-  );
-}
 
-function StallCard({ stall }: { stall: Stall }) {
-  return (
-    <div>
-      <h2 className="text-xl font-bold">{stall.name || stall.id}</h2>
-      {stall.desc && <p className="mt-2 whitespace-pre-wrap">{stall.desc}</p>}
-      <div className="mt-3 flex gap-2 flex-wrap">
-        {stall.tags?.map((t) => (
-          <span key={t} className="px-2 py-0.5 text-sm rounded-full border">{t}</span>
-        ))}
-      </div>
-      <div className="mt-4 space-x-4">
-        {stall.links?.site && (
-          <a href={stall.links.site} target="_blank" rel="noreferrer" className="underline">官網</a>
-        )}
-        {stall.links?.instagram && (
-          <a href={stall.links.instagram} target="_blank" rel="noreferrer" className="underline">IG</a>
-        )}
-      </div>
+      {/* 手機：modal（點空白或關閉按鈕即可關閉） */}
+      {activeSpot && (
+        <div className="md:hidden fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setActiveSpot(null)}
+          />
+          <div className="relative w-11/12 max-h-[80vh] overflow-auto">
+            <BoothInfoPanel booth={booth} error={error} onClose={() => setActiveSpot(null)} variant="mobile" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

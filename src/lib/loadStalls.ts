@@ -1,62 +1,54 @@
-export type Stall = {
-  id: string;
-  name: string;
-  creator_handle?: string;
-  category?: string;
-  desc?: string;
-  links?: { site?: string; instagram?: string };
-  map: { area?: string; spotId: string };
-  tags?: string[];
+// src/lib/loadStalls.ts
+
+export type BoothRow = {
+  id: string;     // 標準化後的攤位編號 (大寫、去空白)
+  rawId: string;  // 原始攤位編號
+  name?: string;  // 社團名稱
+  url?: string;   // 社團連結
 };
 
-export async function loadStalls(csvUrl: string): Promise<Stall[]> {
-  if (!csvUrl) return [];
-  const res = await fetch(csvUrl, { cache: 'no-store' });
-  const text = await res.text();
-  const [headerLine, ...lines] = text.trim().split(/\r?\n/);
-  const headers = headerLine.split(',').map((h) => h.trim());
+export type BoothMap = Map<string, BoothRow>;
 
-  const rows = lines.map((line) => {
-    const cols = splitCsvLine(line);
-    const obj: Record<string, string> = {};
-    headers.forEach((h, i) => (obj[h] = (cols[i] ?? '').trim()))
+const DEFAULT_CSV =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRXBnQBv361Wkj-LE8Bdwsx5_VtlQkEdFEqLPsgkE7ear9HRtxRvme5bx8WBqqAfF7nZbo7pRWqSH9d/pub?gid=0&single=true&output=csv";
 
-    return {
-      id: obj.id,
-      name: obj.name,
-      creator_handle: obj.creator_handle,
-      category: obj.category,
-      desc: obj.desc,
-      links: { site: obj.site, instagram: obj.instagram },
-      map: { area: obj.area, spotId: obj.spotId || obj.id },
-      tags: obj.tags ? obj.tags.split(/[，,]/).map((t) => t.trim()).filter(Boolean) : []
-    } as Stall;
-  });
-
-  return rows;
+// 解析 CSV 成為陣列
+function parseCSV(text: string): string[][] {
+  return text
+    .split("\n")
+    .map((line) => line.split(",").map((c) => c.trim()));
 }
 
-// 極簡 CSV 解析（支援用雙引號包住的逗號）
-function splitCsvLine(line: string): string[] {
-  const result: string[] = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"'; // 轉義的雙引號
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      result.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
-    }
+const norm = (s: any) => (s ?? "").toString().trim().toUpperCase();
+
+export async function loadStalls(csvUrl?: string): Promise<BoothMap> {
+  const url = csvUrl || DEFAULT_CSV;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("CSV 載入失敗");
+
+  const text = await res.text();
+  const rows = parseCSV(text);
+  if (!rows.length) return new Map();
+
+  const header = rows[0];
+  const idxId = header.findIndex((h) => h === "攤位編號");
+  const idxName = header.findIndex((h) => h === "社團名稱");
+  const idxLink = header.findIndex((h) => h === "連結");
+
+  const map: BoothMap = new Map();
+
+  for (let r = 1; r < rows.length; r++) {
+    const cols = rows[r];
+    const rawId = cols[idxId] || "";
+    if (!rawId) continue;
+
+    map.set(norm(rawId), {
+      id: norm(rawId),
+      rawId,
+      name: cols[idxName] || undefined,
+      url: cols[idxLink] || undefined,
+    });
   }
-  result.push(cur);
-  return result;
+
+  return map;
 }
