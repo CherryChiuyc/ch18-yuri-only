@@ -1,10 +1,11 @@
 // src/components/BoothInfoPanel.tsx
+import { useMemo, useState } from "react";
 import type { BoothRow } from "../lib/loadStalls";
 
 type Props = {
   booth: BoothRow | null;
   error?: string | null;
-  onClose?: () => void;   // 手機彈窗用
+  onClose?: () => void;   // 手機全螢幕用的關閉
   variant?: "desktop" | "mobile";
 };
 
@@ -14,20 +15,30 @@ export default function BoothInfoPanel({
   onClose,
   variant = "desktop",
 }: Props) {
+  // 生成圖片路徑（自動切換副檔名）
+  const exts = [".jpg", ".png", ".jpeg"];
+  const [imgIdx, setImgIdx] = useState(0);
+
+  const imgPath = useMemo(() => {
+    if (!booth) return "";
+    const key = (booth.rawId || booth.id).toUpperCase();
+    return `/event_pics/${key}${exts[Math.min(imgIdx, exts.length - 1)]}`;
+  }, [booth, imgIdx]);
+
   const Body = (
     <>
       {error ? (
         <p className="text-red-600">{error}</p>
       ) : booth ? (
         <div className="space-y-3">
-          {/* 社團名稱：大標題（可點） */}
+          {/* 社團名稱 */}
           {booth.name && (
             booth.url ? (
               <a
                 href={booth.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block font-bold text-2xl md:text-3xl text-gray-900 leading-tight underline underline-offset-4 hover:text-blue-700"
+                className="block font-bold text-2xl md:text-3xl text-gray-900 leading-tight underline underline-offset-4 hover:text-blue-700 cursor-pointer"
                 title={booth.name}
               >
                 {booth.name}
@@ -39,22 +50,22 @@ export default function BoothInfoPanel({
             )
           )}
 
-          {/* 攤位編號：次要資訊 */}
+          {/* 攤位編號 */}
           <div className="text-base md:text-lg text-gray-700">
             攤位編號：<span className="font-mono">{booth.rawId || booth.id}</span>
           </div>
-          <div className="mt-3">
-            <img
-                src={`/event_pics/${(booth.rawId || booth.id).toUpperCase()}.jpg`}
+
+          {/* 圖片 */}
+          {imgPath && (
+            <div className="mt-3">
+              <img
+                src={imgPath}
                 alt={booth.name || booth.rawId}
                 className="rounded-lg w-full max-h-[500px] object-contain"
-                onError={(e) => {
-                // 如果找不到 jpg，可以試 png
-                (e.currentTarget as HTMLImageElement).src =
-                    `/event_pics/${(booth.rawId || booth.id).toUpperCase()}.png`;
-                }}
-            />
-          </div>
+                onError={() => setImgIdx((i) => Math.min(i + 1, exts.length - 1))}
+              />
+            </div>
+          )}
         </div>
       ) : (
         <p className="text-gray-500">請點地圖上的攤位查看資訊。</p>
@@ -62,13 +73,13 @@ export default function BoothInfoPanel({
     </>
   );
 
+  // 手機：全螢幕覆蓋
   if (variant === "mobile") {
-    // 手機：彈窗卡片
     return (
-      <div className="relative bg-white rounded-2xl shadow-lg w-11/12 max-h-[80vh] overflow-auto p-4 z-10">
+      <div className="fixed inset-0 bg-white z-50 overflow-y-auto p-6">
         <button
           onClick={onClose}
-          className="absolute top-2 right-2 text-gray-500 hover:text-gray-800"
+          className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl"
           aria-label="關閉"
         >
           ✕
@@ -78,7 +89,7 @@ export default function BoothInfoPanel({
     );
   }
 
-  // 桌面：右側固定側欄
+  // 桌面：右側側欄
   return (
     <aside className="bg-white rounded-2xl shadow p-4 sticky top-4 max-h-[calc(100dvh-2rem)] overflow-auto">
       {Body}
