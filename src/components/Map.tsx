@@ -105,13 +105,26 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
 
   // 讀 CSV
   useEffect(() => {
-    loadStalls("/api/stalls")
-      .then(({ byId /*, all*/ }) => {
+    const url = `/api/stalls?_=${Date.now()}`; // 防快取
+    loadStalls(url)
+      .then(({ byId }) => {
         setBoothMap(byId);
-        // 之後要做搜尋，再把 all 存起來： setAllBooths(all)
+        setError(null);
       })
-      .catch((err) => setError(err.message || "CSV/HTML 載入失敗"));
+      .catch((err) => {
+        console.error("loadStalls error:", err);
+        setError(err.message || "CSV/HTML 載入失敗");
+      });
   }, [csvUrl]);
+
+  // useEffect(() => {
+  //   loadStalls("/api/stalls")
+  //     .then(({ byId /*, all*/ }) => {
+  //       setBoothMap(byId);
+  //       // 之後要做搜尋，再把 all 存起來： setAllBooths(all)
+  //     })
+  //     .catch((err) => setError(err.message || "CSV/HTML 載入失敗"));
+  // }, [csvUrl]);
 
   function injectStyle(src: string) {
     const m = src.match(/<svg[\s\S]*?>/i);
