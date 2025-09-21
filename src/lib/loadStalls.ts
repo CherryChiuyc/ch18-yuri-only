@@ -114,7 +114,7 @@ export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
         name: pick(r, ["社團名稱"]),
         url: pick(r, ["連結"]),
         keywords: (() => {
-          const k = pick(r, ["Default攤位商品關鍵字(檢索用途)", "攤位商品關鍵字", "關鍵字"]);
+          const k = pick(r, ["Default攤位商品關鍵字(檢索用途)", "預設攤位商品關鍵字(檢索用途)", "關鍵字"]);
           return k ? k.split(SEP).map(s => s.trim()).filter(Boolean) : undefined;
         })(),
         items: [],
@@ -127,13 +127,13 @@ export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
       booth.name ||= pick(r, ["社團名稱"]);
       booth.url  ||= pick(r, ["連結"]);
       if (!booth.keywords) {
-        const k = pick(r, ["Default攤位商品關鍵字(檢索用途)", "攤位商品關鍵字", "關鍵字"]);
+        const k = pick(r, ["Default攤位商品關鍵字(檢索用途)", "預設攤位商品關鍵字(檢索用途)", "關鍵字"]);
         if (k) booth.keywords = k.split(SEP).map(s => s.trim()).filter(Boolean);
       }
     }
 
     // 作品層級欄位
-    const themeRaw   = pick(r, ["創作主題(自填)主題TAG", "創作主題(自填)/主題TAG", "創作主題/主題TAG", "主題TAG"]);
+    const themeRaw   = pick(r, ["主題標籤",  "創作主題/主題TAG", "主題TAG"]);
     const themeTags  = themeRaw ? themeRaw.split(SEP).map(s => s.trim()).filter(Boolean) : undefined;
 
     const cpChars    = pick(r, ["主要CP / 角色(自填)", "主要CP/角色(自填)", "主要CP / 角色", "主要CP/角色"]);

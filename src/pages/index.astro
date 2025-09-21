@@ -12,12 +12,44 @@ const CSV_URL = import.meta.env.PUBLIC_CSV_URL;
   </head>
   <body class="min-h-screen bg-slate-50">
     <main class="mx-auto max-w-[1800px] px-6 ml-auto">
-      <h1 class="text-2xl font-bold mb-2">CH18 百合向ONLY攤位地圖</h1>
-      <p class="text-sm text-gray-600 mb-3">此為 MVP 版本，請點擊地圖上的攤位查看資訊。</p>
-
+      <h1 class="text-2xl md:text-4xl font-bold text-center mt-10 mb-8">
+        CH18 百合向ONLY攤位地圖
+      </h1>
       <Map svgUrl="/map/venue.svg" csvUrl={CSV_URL} client:load />
-
-      <footer class="text-xs text-gray-400 mt-8">Build with Astro · Tailwind</footer>
     </main>
+
+    <!-- 分隔線 -->
+    <hr class="border-t border-gray-300 mx-8 my-8 mb-2"/>
+
+    <!-- Footer 區塊 -->
+    <div class="bg-slate-50 text-center text-gray-600 py-8 text-sm">
+      <div class="font-bold text-2xl mb-1">資料來源</div>
+        <div class="mt-2 text-center text-2xl font-bold text-indigo-600 space-x-10">
+          <a 
+            href="https://your-official-site.com" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            class="hover:underline hover:text-indigo-800"
+          >
+            官方網站
+          </a>
+          <a 
+            href="https://your-another-link.com" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            class="hover:underline hover:text-indigo-800"
+          >
+            吃土單
+          </a>
+        </div>
+        <div class="mt-4 text-xl text-gray-500 space-x-2">
+          <span>© 2025 NA23, 樸陶燃</span>
+          <span>|</span>
+          <span>
+            本作品由原作者 NA23, 樸陶燃 非官方製作。
+          </span>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
