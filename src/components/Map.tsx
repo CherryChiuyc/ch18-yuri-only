@@ -105,7 +105,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
 
   // 讀 CSV
   useEffect(() => {
-    loadStalls(csvUrl)
+    loadStalls("/api/stalls")
       .then(({ byId /*, all*/ }) => {
         setBoothMap(byId);
         // 之後要做搜尋，再把 all 存起來： setAllBooths(all)
