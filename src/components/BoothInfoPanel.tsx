@@ -1,4 +1,3 @@
-// src/components/BoothInfoPanel.tsx
 import { useMemo, useState } from "react";
 import type { BoothEntry, WorkItem } from "../lib/loadStalls";
 
@@ -9,8 +8,14 @@ type Props = {
   variant?: "desktop" | "mobile";
 };
 
-// 小元件
-function Tag({ children, variant = "default" }: { children: React.ReactNode; variant?: "default" | "danger" | "success" | "info" }) {
+// 小元件：Tag
+function Tag({
+  children,
+  variant = "default",
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "danger" | "success" | "info";
+}) {
   const base = "inline-flex items-center px-2 py-0.5 rounded text-sm font-medium";
   const variants: Record<string, string> = {
     default: "bg-slate-100 text-slate-700",
@@ -25,10 +30,7 @@ const TagList = ({ items }: { items?: string[] }) =>
   items && items.length ? (
     <ul className="flex flex-wrap gap-2">
       {items.map((t, i) => (
-        <li
-          key={i}
-          className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-md"
-        >
+        <li key={i} className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-md">
           {t}
         </li>
       ))}
@@ -43,24 +45,24 @@ const Labeled = ({ label, children }: { label: string; children?: React.ReactNod
     </div>
   ) : null;
 
-const hasRenderableContent = (it: WorkItem) => {
-  return Boolean(
+const hasRenderableContent = (it: WorkItem) =>
+  Boolean(
     (it.themeTags && it.themeTags.length) ||
-    it.cpChars ||
-    it.bookTitle ||
-    it.author ||
-    it.productType ||
-    it.isNewOrOld ||
-    it.priceRaw ||
-    it.priceNum != null ||
-    it.actionUrl ||
-    it.actionType ||
-    it.isR18
+      it.cpChars ||
+      it.bookTitle ||
+      it.author ||
+      it.productType ||
+      it.isNewOrOld ||
+      it.priceRaw ||
+      it.priceNum != null ||
+      it.actionUrl ||
+      it.actionType ||
+      it.isR18
   );
-};
 
 function WorkBlock({ item }: { item: WorkItem }) {
   if (!hasRenderableContent(item)) return null;
+
   return (
     <section className="rounded-xl border border-slate-200 p-3 md:p-4 space-y-2 bg-white">
       {/* R18 + 主題 TAGs */}
@@ -71,7 +73,7 @@ function WorkBlock({ item }: { item: WorkItem }) {
         ))}
       </div>
 
-      {/* 作品欄位（略） */}
+      {/* 作品欄位 */}
       <div className="space-y-2">
         <Labeled label="主要CP / 角色">{item.cpChars}</Labeled>
         <Labeled label="品名">{item.bookTitle}</Labeled>
@@ -84,8 +86,8 @@ function WorkBlock({ item }: { item: WorkItem }) {
       </div>
 
       {/* 合併後的一條連結：文字=actionType、href=actionUrl */}
-      <div className="flex flex-col gap-1 pt-1">
-        {item.actionUrl && (
+      {item.actionUrl && (
+        <div className="pt-1">
           <a
             href={item.actionUrl}
             target="_blank"
@@ -94,12 +96,11 @@ function WorkBlock({ item }: { item: WorkItem }) {
           >
             {item.actionType || "連結"}
           </a>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
-
 
 export default function BoothInfoPanel({
   booth,
@@ -131,9 +132,7 @@ export default function BoothInfoPanel({
             {booth.name}
           </a>
         ) : (
-          <h2 className="font-bold text-2xl md:text-3xl text-gray-900 leading-tight">
-            {booth.name}
-          </h2>
+          <h2 className="font-bold text-2xl md:text-3xl text-gray-900 leading-tight">{booth.name}</h2>
         )
       ) : null}
 
@@ -152,7 +151,7 @@ export default function BoothInfoPanel({
         <div className="space-y-4">
           {Header}
 
-          {/* 攤位主圖 */}
+          {/* 攤位主圖（按順序嘗試 jpg→png→jpeg） */}
           {imgPath && (
             <div className="mt-1">
               <img
@@ -173,18 +172,18 @@ export default function BoothInfoPanel({
           ) : null}
 
           {/* 多筆作品 */}
-          {booth.items?.length ? (
-            (() => {
-              const items = booth.items.filter(hasRenderableContent);
-              return items.length ? (
-                <div className="space-y-3">
-                  {items.map((it, i) => (
-                    <WorkBlock key={i} item={it} />
-                  ))}
-                </div>
-              ) : null;
-            })()
-          ) : null}
+          {booth.items?.length
+            ? (() => {
+                const items = booth.items.filter(hasRenderableContent);
+                return items.length ? (
+                  <div className="space-y-3">
+                    {items.map((it, i) => (
+                      <WorkBlock key={i} item={it} />
+                    ))}
+                  </div>
+                ) : null;
+              })()
+            : null}
         </div>
       ) : (
         <p className="text-gray-500">請點地圖上的攤位查看資訊。</p>
@@ -193,12 +192,12 @@ export default function BoothInfoPanel({
   );
 
   if (variant === "mobile") {
-    // 手機：固定尺寸卡片（大小由 Map.tsx 的 overlay 控制邊距與灰底）
+    // 手機：固定尺寸卡片（外層灰底 + 邊距由 Map.tsx 控制）
     return (
-      <div className="relative bg-white rounded-2xl shadow-lg w-full max-w-[640px] max-h-full overflow-y-auto overscroll-contain p-4">
+      <div className="relative bg-white rounded-2xl shadow-lg w-full max-w-[640px] max-h-full overflow-y-auto overscroll-contain p-4 [-webkit-overflow-scrolling:touch]">
         <button
           onClick={onClose}
-          className="sticky top-0 ml-auto block text-right text-gray-500 hover:text-gray-800 text-2xl"
+          className="sticky top-0 ml-auto block text-right text-gray-500 hover:text-gray-800 text-2xl bg-white/90"
           aria-label="關閉"
         >
           ✕

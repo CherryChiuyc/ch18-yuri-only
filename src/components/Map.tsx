@@ -1,4 +1,3 @@
-// src/components/Map.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { loadStalls, type BoothMap, type BoothEntry } from "../lib/loadStalls";
@@ -6,7 +5,7 @@ import BoothInfoPanel from "./BoothInfoPanel";
 
 type Props = { svgUrl: string; csvUrl?: string };
 
-// 取得 visual viewport 並計算反向縮放比例，確保 overlay 不受頁面縮放影響
+// 取得 visual viewport 並計算反向縮放比例，確保 overlay 不受頁面縮放影響（iOS Chrome/Safari）
 function useVisualViewportBox() {
   const [box, setBox] = useState({
     left: 0,
@@ -60,17 +59,21 @@ function useBodyScrollLock(locked: boolean) {
       top: body.style.top,
       width: body.style.width,
       overflow: body.style.overflow,
+      touchAction: (body.style as any).touchAction as string | undefined,
     };
     body.style.position = "fixed";
     body.style.top = `-${scrollY}px`;
     body.style.width = "100%";
     body.style.overflow = "hidden";
+    // iOS：避免背景仍可拖動
+    (body.style as any).touchAction = "none";
 
     return () => {
       body.style.position = prev.position;
       body.style.top = prev.top;
       body.style.width = prev.width;
       body.style.overflow = prev.overflow;
+      (body.style as any).touchAction = prev.touchAction ?? "";
       window.scrollTo(0, scrollY);
     };
   }, [locked]);
@@ -84,14 +87,12 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
-
+  // 預設 100%（避免回頁/外部連結導致非 100%）
   useEffect(() => {
     const meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
-    if (meta) {
-      meta.content = "width=device-width, initial-scale=1";
-    }
+    if (meta) meta.content = "width=device-width, initial-scale=1";
   }, []);
-  
+
   // 讀 SVG
   useEffect(() => {
     fetch(svgUrl, { cache: "no-cache" })
@@ -103,9 +104,9 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       .catch(() => setError("無法載入場地地圖（SVG）。"));
   }, [svgUrl]);
 
-  // 讀 CSV
+  // 讀 CSV（打自家 API，避免 CORS；加上 cache buster 防快取）
   useEffect(() => {
-    const url = `/api/stalls?_=${Date.now()}`; // 防快取
+    const url = `/api/stalls?_=${Date.now()}`;
     loadStalls(url)
       .then(({ byId }) => {
         setBoothMap(byId);
@@ -115,16 +116,8 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
         console.error("loadStalls error:", err);
         setError(err.message || "CSV/HTML 載入失敗");
       });
-  }, [csvUrl]);
-
-  // useEffect(() => {
-  //   loadStalls("/api/stalls")
-  //     .then(({ byId /*, all*/ }) => {
-  //       setBoothMap(byId);
-  //       // 之後要做搜尋，再把 all 存起來： setAllBooths(all)
-  //     })
-  //     .catch((err) => setError(err.message || "CSV/HTML 載入失敗"));
-  // }, [csvUrl]);
+    // 固定用 /api/stalls，不依賴 props
+  }, []);
 
   function injectStyle(src: string) {
     const m = src.match(/<svg[\s\S]*?>/i);
@@ -144,7 +137,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
     return src.slice(0, insertAt) + style + src.slice(insertAt);
   }
 
-  // 把 SVG 放進去、掛事件
+  // 把 SVG 放進去、掛事件（hover 名稱、點擊選取）
   useEffect(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -189,18 +182,31 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
 
     // hover tooltip
     const tt = tooltipRef.current!;
-    const pad = 8, offset = 12;
-    const show = (txt: string) => { tt.textContent = txt; tt.style.opacity = "1"; tt.setAttribute("aria-hidden","false"); };
-    const hide = () => { tt.style.opacity = "0"; tt.setAttribute("aria-hidden","true"); };
-    const place = (x:number,y:number) => {
-      tt.style.left = "0px"; tt.style.top = "0px";
-      const r = tt.getBoundingClientRect(), vpW = innerWidth, vpH = innerHeight;
-      let L = x + offset, T = y + offset;
+    const pad = 8,
+      offset = 12;
+    const show = (txt: string) => {
+      tt.textContent = txt;
+      tt.style.opacity = "1";
+      tt.setAttribute("aria-hidden", "false");
+    };
+    const hide = () => {
+      tt.style.opacity = "0";
+      tt.setAttribute("aria-hidden", "true");
+    };
+    const place = (x: number, y: number) => {
+      tt.style.left = "0px";
+      tt.style.top = "0px";
+      const r = tt.getBoundingClientRect(),
+        vpW = innerWidth,
+        vpH = innerHeight;
+      let L = x + offset,
+        T = y + offset;
       if (L + r.width + pad > vpW) L = x - r.width - offset;
       if (T + r.height + pad > vpH) T = y - r.height - offset;
       L = Math.max(pad, Math.min(L, vpW - r.width - pad));
       T = Math.max(pad, Math.min(T, vpH - r.height - pad));
-      tt.style.left = `${L}px`; tt.style.top = `${T}px`;
+      tt.style.left = `${L}px`;
+      tt.style.top = `${T}px`;
     };
     const handleOver = (e: MouseEvent) => {
       const el = getRectEl(e.target);
@@ -228,7 +234,10 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
 
   const norm = (s: any) => (s ?? "").toString().trim().toUpperCase();
   const booth: BoothEntry | null = useMemo(
-    () => (activeSpot ? boothMap.get(norm(activeSpot)) ?? { id: norm(activeSpot), rawId: activeSpot, items: [] } : null),
+    () =>
+      activeSpot
+        ? boothMap.get(norm(activeSpot)) ?? { id: norm(activeSpot), rawId: activeSpot, items: [] }
+        : null,
     [activeSpot, boothMap]
   );
 
@@ -256,8 +265,19 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       <div
         ref={tooltipRef}
         className="fixed z-[9999] pointer-events-none px-2.5 py-1.5 rounded-lg shadow text-sm text-white"
-        style={{ background:"rgba(0,0,0,0.8)", opacity:0, transition:"opacity 120ms ease", left:0, top:0, maxWidth:"min(60vw,24rem)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
-        role="tooltip" aria-hidden="true"
+        style={{
+          background: "rgba(0,0,0,0.8)",
+          opacity: 0,
+          transition: "opacity 120ms ease",
+          left: 0,
+          top: 0,
+          maxWidth: "min(60vw,24rem)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+        role="tooltip"
+        aria-hidden="true"
       />
 
       {/* 桌面：右側固定資訊欄 */}
@@ -265,7 +285,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
         <BoothInfoPanel booth={booth} error={error} variant="desktop" />
       </aside>
 
-      {/* 手機：body 層級彈窗（固定卡片尺寸；只捲卡片；點空白處可關閉） */}
+      {/* 手機：body 層級彈窗（固定卡片尺寸；只捲卡片；灰底不可點） */}
       {activeSpot &&
         createPortal(
           <div
@@ -284,7 +304,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
             {/* 灰底（純視覺，不可點擊關閉） */}
             <div className="absolute inset-0 bg-black/60" />
 
-            {/* 置中卡片 */}
+            {/* 置中卡片（四周留白） */}
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <BoothInfoPanel
                 booth={booth}
