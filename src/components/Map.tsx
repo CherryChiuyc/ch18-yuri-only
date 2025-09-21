@@ -1,6 +1,7 @@
+// src/components/Map.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { loadStalls, type BoothMap, type BoothRow } from "../lib/loadStalls";
+import { loadStalls, type BoothMap, type BoothEntry } from "../lib/loadStalls";
 import BoothInfoPanel from "./BoothInfoPanel";
 
 type Props = { svgUrl: string; csvUrl?: string };
@@ -83,6 +84,14 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
+
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
+    if (meta) {
+      meta.content = "width=device-width, initial-scale=1";
+    }
+  }, []);
+  
   // 讀 SVG
   useEffect(() => {
     fetch(svgUrl, { cache: "no-cache" })
@@ -97,11 +106,11 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
   // 讀 CSV
   useEffect(() => {
     loadStalls(csvUrl)
-      .then((m) => setBoothMap(m))
-      .catch((err) => {
-        console.warn(err);
-        setError("CSV/HTML 載入失敗");
-      });
+      .then(({ byId /*, all*/ }) => {
+        setBoothMap(byId);
+        // 之後要做搜尋，再把 all 存起來： setAllBooths(all)
+      })
+      .catch((err) => setError(err.message || "CSV/HTML 載入失敗"));
   }, [csvUrl]);
 
   function injectStyle(src: string) {
@@ -205,8 +214,8 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
   }, [svgHtml, error, boothMap]);
 
   const norm = (s: any) => (s ?? "").toString().trim().toUpperCase();
-  const booth: BoothRow | null = useMemo(
-    () => (activeSpot ? boothMap.get(norm(activeSpot)) ?? { id: norm(activeSpot), rawId: activeSpot } : null),
+  const booth: BoothEntry | null = useMemo(
+    () => (activeSpot ? boothMap.get(norm(activeSpot)) ?? { id: norm(activeSpot), rawId: activeSpot, items: [] } : null),
     [activeSpot, boothMap]
   );
 
