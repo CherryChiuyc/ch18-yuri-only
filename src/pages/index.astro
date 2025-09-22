@@ -6,7 +6,8 @@ const CSV_URL = import.meta.env.PUBLIC_CSV_URL;
 <html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- 修正這裡：固定 viewport，不要在 React 裡動態改 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>CH18 百合向ONLY攤位地圖</title>
     <meta name="description" content="CH18 百合向ONLY攤位互動地圖" />
   </head>

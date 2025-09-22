@@ -1,97 +1,54 @@
+// src/components/Map.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { loadStalls, type BoothMap, type BoothEntry } from "../lib/loadStalls";
 import BoothInfoPanel from "./BoothInfoPanel";
 
-type Props = { svgUrl: string; csvUrl?: string };
+type Props = { svgUrl: string };
 
-// 取得 visual viewport 並計算反向縮放比例，確保 overlay 不受頁面縮放影響（iOS Chrome/Safari）
-function useVisualViewportBox() {
-  const [box, setBox] = useState({
-    left: 0,
-    top: 0,
-    layoutW: typeof window !== "undefined" ? window.innerWidth : 0,
-    layoutH: typeof window !== "undefined" ? window.innerHeight : 0,
-    scale: 1, // = visualViewport.width / window.innerWidth
-  });
-
-  useEffect(() => {
-    const vv = (window as any).visualViewport as VisualViewport | undefined;
-    const update = () => {
-      const layoutW = window.innerWidth;
-      const layoutH = window.innerHeight;
-      if (vv) {
-        const scale = vv.width / layoutW;
-        setBox({ left: vv.offsetLeft, top: vv.offsetTop, layoutW, layoutH, scale });
-      } else {
-        setBox({ left: 0, top: 0, layoutW, layoutH, scale: 1 });
-      }
-    };
-    update();
-    if (vv) {
-      vv.addEventListener("resize", update);
-      vv.addEventListener("scroll", update);
-      return () => {
-        vv.removeEventListener("resize", update);
-        vv.removeEventListener("scroll", update);
-      };
-    } else {
-      window.addEventListener("resize", update);
-      window.addEventListener("scroll", update);
-      return () => {
-        window.removeEventListener("resize", update);
-        window.removeEventListener("scroll", update);
-      };
-    }
-  }, []);
-
-  return box;
-}
-
-// 鎖住 body 捲動（手機彈窗開啟時）
+/** 鎖住 body 捲動（開彈窗時）— 安全實作 */
 function useBodyScrollLock(locked: boolean) {
   useEffect(() => {
     if (!locked) return;
-    const { scrollY } = window;
+
+    const scrollY = window.scrollY;
     const body = document.body;
+
     const prev = {
       position: body.style.position,
       top: body.style.top,
+      left: (body.style as any).left as string | undefined,
+      right: (body.style as any).right as string | undefined,
       width: body.style.width,
       overflow: body.style.overflow,
-      touchAction: (body.style as any).touchAction as string | undefined,
     };
+
     body.style.position = "fixed";
     body.style.top = `-${scrollY}px`;
+    (body.style as any).left = "0";
+    (body.style as any).right = "0";
     body.style.width = "100%";
     body.style.overflow = "hidden";
-    // iOS：避免背景仍可拖動
-    (body.style as any).touchAction = "none";
 
     return () => {
       body.style.position = prev.position;
       body.style.top = prev.top;
+      (body.style as any).left = prev.left ?? "";
+      (body.style as any).right = prev.right ?? "";
       body.style.width = prev.width;
       body.style.overflow = prev.overflow;
-      (body.style as any).touchAction = prev.touchAction ?? "";
       window.scrollTo(0, scrollY);
     };
   }, [locked]);
 }
 
-export default function VenueMap({ svgUrl, csvUrl }: Props) {
+export default function VenueMap({ svgUrl }: Props) {
   const [svgHtml, setSvgHtml] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [activeSpot, setActiveSpot] = useState<string | null>(null);
   const [boothMap, setBoothMap] = useState<BoothMap>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-
-  // 預設 100%（避免回頁/外部連結導致非 100%）
-  useEffect(() => {
-    const meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
-    if (meta) meta.content = "width=device-width, initial-scale=1";
-  }, []);
 
   // 讀 SVG
   useEffect(() => {
@@ -116,9 +73,9 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
         console.error("loadStalls error:", err);
         setError(err.message || "CSV/HTML 載入失敗");
       });
-    // 固定用 /api/stalls，不依賴 props
   }, []);
 
+  /** 將內嵌樣式插入 SVG <style> */
   function injectStyle(src: string) {
     const m = src.match(/<svg[\s\S]*?>/i);
     if (!m || m.index == null) return src;
@@ -137,7 +94,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
     return src.slice(0, insertAt) + style + src.slice(insertAt);
   }
 
-  // 把 SVG 放進去、掛事件（hover 名稱、點擊選取）
+  // 把 SVG 放到容器並掛事件（hover 名稱、點擊選取）
   useEffect(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -180,10 +137,11 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       }
     };
 
-    // hover tooltip
+    // tooltip
     const tt = tooltipRef.current!;
-    const pad = 8,
-      offset = 12;
+    const pad = 8;
+    const offset = 12;
+
     const show = (txt: string) => {
       tt.textContent = txt;
       tt.style.opacity = "1";
@@ -193,14 +151,17 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       tt.style.opacity = "0";
       tt.setAttribute("aria-hidden", "true");
     };
+
     const place = (x: number, y: number) => {
       tt.style.left = "0px";
       tt.style.top = "0px";
-      const r = tt.getBoundingClientRect(),
-        vpW = innerWidth,
-        vpH = innerHeight;
-      let L = x + offset,
-        T = y + offset;
+      const r = tt.getBoundingClientRect();
+      const vv = (window as any).visualViewport as VisualViewport | undefined;
+      const vpW = vv?.width ?? window.innerWidth;
+      const vpH = vv?.height ?? window.innerHeight;
+
+      let L = x + offset;
+      let T = y + offset;
       if (L + r.width + pad > vpW) L = x - r.width - offset;
       if (T + r.height + pad > vpH) T = y - r.height - offset;
       L = Math.max(pad, Math.min(L, vpW - r.width - pad));
@@ -208,6 +169,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       tt.style.left = `${L}px`;
       tt.style.top = `${T}px`;
     };
+
     const handleOver = (e: MouseEvent) => {
       const el = getRectEl(e.target);
       if (!el?.id) return;
@@ -224,6 +186,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
     host.addEventListener("mouseover", handleOver);
     host.addEventListener("mousemove", handleMove);
     host.addEventListener("mouseout", hide);
+
     return () => {
       host.removeEventListener("click", handleClick);
       host.removeEventListener("mouseover", handleOver);
@@ -241,12 +204,12 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
     [activeSpot, boothMap]
   );
 
-  // 只有在手機尺寸且有彈窗時鎖住背景
-  const isMobile = typeof window !== "undefined" ? window.matchMedia("(max-width: 767.98px)").matches : false;
+  // 僅在手機寬度且有彈窗時鎖住背景
+  const isMobile =
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 767.98px)").matches
+      : false;
   useBodyScrollLock(Boolean(activeSpot && isMobile));
-
-  // 用 visual viewport 盒來定位 overlay，並用「反向縮放」抵消頁面縮放
-  const vv = useVisualViewportBox();
 
   return (
     <div
@@ -293,25 +256,42 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
             style={{
               position: "fixed",
               zIndex: 10000,
-              left: vv.left,
-              top: vv.top,
-              width: vv.layoutW,
-              height: vv.layoutH,
-              transform: `scale(${vv.scale})`,
-              transformOrigin: "left top",
+              inset: 0,
+              minHeight: "100dvh", // iOS/Android 對齊
             }}
           >
-            {/* 灰底（純視覺，不可點擊關閉） */}
+            {/* 灰底（純視覺） */}
             <div className="absolute inset-0 bg-black/60" />
 
-            {/* 置中卡片（四周留白） */}
-            <div className="absolute inset-0 flex items-center justify-center p-6">
-              <BoothInfoPanel
-                booth={booth}
-                error={error}
-                onClose={() => setActiveSpot(null)}
-                variant="mobile"
-              />
+            {/* 置中卡片（考慮 safe-area） */}
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "grid",
+                placeItems: "center",
+                padding: "24px",
+                paddingTop: "calc(24px + env(safe-area-inset-top))",
+                paddingBottom: "calc(24px + env(safe-area-inset-bottom))",
+              }}
+            >
+              <div
+                style={{
+                  maxInlineSize: "min(92vw, 560px)",
+                  maxBlockSize: "90dvh",
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  borderRadius: 14,
+                  background: "#fff",
+                }}
+              >
+                <BoothInfoPanel
+                  booth={booth}
+                  error={error}
+                  onClose={() => setActiveSpot(null)}
+                  variant="mobile"
+                />
+              </div>
             </div>
           </div>,
           document.body
