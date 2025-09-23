@@ -1,5 +1,6 @@
 // src/lib/loadStalls.ts
 export type WorkItem = {
+  creationTheme?: string;
   themeTags?: string[];
   cpChars?: string;
   bookTitle?: string;
@@ -133,7 +134,8 @@ export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
     }
 
     // 作品層級欄位
-    const themeRaw   = pick(r, ["主題標籤",  "創作主題/主題TAG", "主題TAG"]);
+    const creationTheme = pick(r, ["創作主題"]);
+    const themeRaw   = pick(r, ["主題標籤", "主題TAG"]);
     const themeTags  = themeRaw ? themeRaw.split(SEP).map(s => s.trim()).filter(Boolean) : undefined;
 
     const cpChars    = pick(r, ["主要CP / 角色(自填)", "主要CP/角色(自填)", "主要CP / 角色", "主要CP/角色"]);
@@ -153,11 +155,12 @@ export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
 
     // 是否這一列真的有作品內容
     const hasContent =
-      (themeTags && themeTags.length) || cpChars || bookTitle || isR18 != null ||
+      creationTheme || (themeTags && themeTags.length) || cpChars || bookTitle || isR18 != null ||
       author || productType || isNewOrOld || priceRaw || actionType || actionUrl;
 
     if (hasContent) {
       booth.items.push({
+        creationTheme,
         themeTags,
         cpChars,
         bookTitle,

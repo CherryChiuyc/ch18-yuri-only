@@ -73,6 +73,7 @@ function WorkBlock({ item }: { item: WorkItem }) {
 
       {/* 作品欄位（略） */}
       <div className="space-y-2">
+        {item.creationTheme && <Labeled label="創作主題">{item.creationTheme}</Labeled>}
         <Labeled label="主要CP / 角色">{item.cpChars}</Labeled>
         <Labeled label="品名">{item.bookTitle}</Labeled>
         <Labeled label="作者">{item.author}</Labeled>
