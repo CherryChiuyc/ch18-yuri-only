@@ -117,6 +117,94 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       });
   }, [csvUrl]);
 
+  // --- 自動刷新（能見度感知 + 指數回退） ---
+  useEffect(() => {
+    // --- 可調參數 ---
+    const baseMs = 10_000;   // 基準：10s
+    const maxMs  = 120_000;  // 回退上限：120s
+    let   curMs  = baseMs;
+
+    // --- 內部狀態 ---
+    let timer: number | null = null;
+    let stopped = false;
+    let lastHash = "";  // 只在這個 effect 生命週期內持久（deps=[] 不會重建）
+
+    // 能見度
+    const visible = () => document.visibilityState === "visible";
+
+    // 極簡字串 hash（djb2）
+    const djb2 = (s: string) => {
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+      return String(h >>> 0);
+    };
+
+    // 主迴圈
+    const tick = async () => {
+      if (stopped) return;
+      if (!visible()) { schedule(); return; } // 背景時不抓，等回前景
+
+      try {
+        const url = `/api/stalls?_=${Date.now()}`;             // 防中間層快取
+        const res = await fetch(url, { cache: "no-cache" });   // 或改 "no-store"
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        // 先取文字算 hash，沒變就不 setState 以避免重繪
+        const text = await res.text();
+        const h = djb2(text);
+        if (h !== lastHash) {
+          lastHash = h;
+          const data = JSON.parse(text);
+          if (data?.byId) setBoothMap(new Map(data.byId));
+        }
+
+        // 成功 → 重置節奏回 10s
+        curMs = baseMs;
+      } catch (e) {
+        // 失敗 → 指數回退（x1.8）
+        curMs = Math.min(Math.floor(curMs * 1.8), maxMs);
+        console.warn("auto refresh failed; backoff to", curMs, "ms", e);
+      } finally {
+        schedule();
+      }
+    };
+
+    // 設定下一次
+    const schedule = () => {
+      if (stopped) return;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(tick, curMs);
+    };
+
+    // 回到前景：立刻刷新 + 節奏歸位
+    const onVis = () => {
+      if (!visible()) return;
+      curMs = baseMs;
+      if (timer) window.clearTimeout(timer);
+      tick();
+    };
+
+    // 網路恢復：立刻刷新 + 節奏歸位
+    const onOnline = () => {
+      curMs = baseMs;
+      if (timer) window.clearTimeout(timer);
+      tick();
+    };
+
+    // 啟動
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("online", onOnline);
+    schedule();
+
+    // 清理
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
+
   // useEffect(() => {
   //   loadStalls("/api/stalls")
   //     .then(({ byId /*, all*/ }) => {
