@@ -187,15 +187,16 @@ function looksLikeHtml(s: string) {
 async function fetchTextNoCache(url: string) {
   const res = await fetch(url, {
     redirect: "follow",
-    cache: "no-store",
+    // ⚠️ 刪掉 RequestInit.cache: "no-store"
     headers: {
-      // 某些節點對 UA/Accept 比較挑；保險加上
       "User-Agent": "Mozilla/5.0 (compatible; CH18-stalls/1.0; +pages-functions)",
       "Accept": "text/csv, text/plain, */*",
+      // 用標頭表達「不要用快取」
       "Cache-Control": "no-cache",
       "Pragma": "no-cache",
     },
-    cf: { cacheTtl: 0, cacheEverything: false },
+    // ⚠️ 不要再設定 cacheTtl: 0，避免和 no-cache 衝突
+    cf: { cacheEverything: false },
   });
   const text = await res.text();
   return { res, text };
