@@ -1,7 +1,6 @@
-// /functions/api/stalls.ts
 import type { PagesFunction } from "@cloudflare/workers-types";
 
-// ====== 依你現有 loadStalls.ts 的型別 ======
+// ====== 你的資料型別（保持不變，最小可用） ======
 type WorkItem = {
   creationTheme?: string;
   themeTags?: string[];
@@ -27,8 +26,8 @@ type BoothEntry = {
   _rawRows?: Record<string, string>[];
 };
 
-// ====== 你現有的 CSV 解析＋正規化（濃縮自 loadStalls.ts） ======
-const SEP = /[|｜│]+/g; // 直立線家族分隔  :contentReference[oaicite:4]{index=4}
+// ====== 你現有 loadStalls.ts 裡的解析（濃縮移植） ======
+const SEP = /[|｜│]+/g;
 
 function csvToRows(text: string): string[][] {
   const rows: string[][] = [];
@@ -75,7 +74,6 @@ function pick(row: Record<string, string>, keys: string[]): string | undefined {
   }
   return undefined;
 }
-
 function normalizeToShape(text: string): { byId: Array<[string, BoothEntry]>; all: BoothEntry[] } {
   const rows = parseCSV(text);
   const byId = new Map<string, BoothEntry>();
@@ -138,18 +136,18 @@ function normalizeToShape(text: string): { byId: Array<[string, BoothEntry]>; al
       author || productType || isNewOrOld || priceRaw || actionType || actionUrl;
 
     if (hasContent) {
-      byId.get(id)!.items.push({
+      booth.items.push({
         creationTheme, themeTags, cpChars, bookTitle, isR18,
         author, productType, isNewOrOld, priceRaw, priceNum, actionType, actionUrl, _raw: r,
       });
     }
-    byId.get(id)!._rawRows?.push(r);
+    booth._rawRows?.push(r);
   });
 
   return { byId: Array.from(byId.entries()), all };
 }
 
-// ====== 上游來源挑選（優先 gviz，其次 publish-to-web CSV） ======
+// ====== 上游來源工具 ======
 function normalizePubToCsv(raw: string): string {
   try {
     const u = new URL(raw);
@@ -181,31 +179,97 @@ function buildGvizCsvUrl(editUrl: string, gid = "0") {
     return out.toString();
   } catch { return null; }
 }
-async function fetchTextNoCache(url: string) {
-  const res = await fetch(url, { redirect: "follow", cache: "no-store", cf: { cacheTtl: 0, cacheEverything: false } });
-  const text = await res.text();
-  return { res, text };
-}
 function looksLikeHtml(s: string) {
   const head = s.slice(0, 200).toLowerCase().trim();
   return !s.trim() || head.startsWith("<!doctype") || head.startsWith("<html");
 }
 
-// ====== 簡易伺服器端快取 + 請求合併，避免高併發羊群 ======
+async function fetchTextNoCache(url: string) {
+  const res = await fetch(url, {
+    redirect: "follow",
+    cache: "no-store",
+    headers: {
+      // 某些節點對 UA/Accept 比較挑；保險加上
+      "User-Agent": "Mozilla/5.0 (compatible; CH18-stalls/1.0; +pages-functions)",
+      "Accept": "text/csv, text/plain, */*",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache",
+    },
+    cf: { cacheTtl: 0, cacheEverything: false },
+  });
+  const text = await res.text();
+  return { res, text };
+}
+
+// ====== 伺服器端短期快取＋請求合併 ======
 let cacheBody: string | null = null;
 let cacheAt = 0;
 const TTL_MS = 15_000;
 let inflight: Promise<string> | null = null;
 
+// ====== 主 handler（含診斷模式/保險開關） ======
 export const onRequestGet: PagesFunction = async (ctx) => {
-  const { request, env } = ctx as unknown as { request: Request; env: { PUBLIC_CSV_URL?: string; PUBLIC_SHEET_EDIT_URL?: string } };
-  const raw = env.PUBLIC_CSV_URL;
-  const edit = env.PUBLIC_SHEET_EDIT_URL || "";
-  if (!raw) return new Response(JSON.stringify({ error: "PUBLIC_CSV_URL missing" }), { status: 500 });
-
+  const { request, env } = ctx as unknown as {
+    request: Request;
+    env: { PUBLIC_CSV_URL?: string; PUBLIC_SHEET_EDIT_URL?: string };
+  };
   const url = new URL(request.url);
-  const gid = url.searchParams.get("gid") || "0";
+  const mode = url.searchParams.get("mode");       // diag: 只輸出診斷
+  const force = url.searchParams.get("force");     // "pub": 強制走 publish-to-web
+  const gid   = url.searchParams.get("gid") || "0";
+  const srcOverride = url.searchParams.get("src"); // 測試覆蓋來源
 
+  const rawPub = env.PUBLIC_CSV_URL;
+  const edit   = env.PUBLIC_SHEET_EDIT_URL || "";
+
+  if (!rawPub && !srcOverride) {
+    return new Response(JSON.stringify({ error: "PUBLIC_CSV_URL missing" }), { status: 500 });
+  }
+
+  const candidates: string[] = [];
+  if (srcOverride) {
+    candidates.push(srcOverride);
+  } else {
+    const pubNorm = normalizePubToCsv(rawPub!);
+    if (force === "pub") {
+      candidates.push(pubNorm);
+    } else {
+      // 優先 gviz（較新鮮、但需檔案「任何有連結者可檢視」）
+      const gviz = edit ? buildGvizCsvUrl(edit, gid) : null;
+      if (gviz) candidates.push(gviz);
+      candidates.push(pubNorm);
+      if (rawPub !== pubNorm) candidates.push(rawPub!);
+    }
+  }
+
+  // 診斷模式：逐一嘗試，回傳每個候選的結果摘要
+  if (mode === "diag") {
+    const report: any[] = [];
+    for (const c of candidates) {
+      try {
+        const { res, text } = await fetchTextNoCache(c);
+        report.push({
+          url: c,
+          status: res.status,
+          type: res.headers.get("content-type") || "",
+          isHtml: looksLikeHtml(text),
+          head: text.slice(0, 120),
+        });
+      } catch (e: any) {
+        report.push({ url: c, error: e?.message || String(e) });
+      }
+    }
+    return new Response(JSON.stringify({ candidates: report }, null, 2), {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-diag-candidate-count": String(candidates.length),
+      },
+    });
+  }
+
+  // 命中快取
   const now = Date.now();
   if (cacheBody && (now - cacheAt) < TTL_MS) {
     return new Response(cacheBody, {
@@ -221,21 +285,19 @@ export const onRequestGet: PagesFunction = async (ctx) => {
 
   if (!inflight) {
     inflight = (async () => {
-      const candidates: string[] = [];
-      const norm = normalizePubToCsv(raw);
-      if (norm) candidates.push(norm);
-      if (raw !== norm) candidates.push(raw);
-      const gviz = edit ? buildGvizCsvUrl(edit, gid) : null;
-      if (gviz) candidates.unshift(gviz); // 優先 gviz（較新鮮）
-
       let finalCsv = "";
+      const tries: string[] = [];
       for (const cand of candidates) {
+        tries.push(cand);
         try {
           const { res, text } = await fetchTextNoCache(cand);
-          const ct = res.headers.get("content-type") || "";
-          if (res.ok && !looksLikeHtml(text) && /csv|plain|text/.test(ct)) { finalCsv = text; break; }
-          if (res.ok && !looksLikeHtml(text) && !ct) { finalCsv = text; break; } // 有些 gviz 回 header 不齊
-        } catch { /* try next */ }
+          const ct = (res.headers.get("content-type") || "").toLowerCase();
+          // 放寬條件：只要不是 HTML，就當作 CSV/純文字
+          if (res.ok && !looksLikeHtml(text)) {
+            finalCsv = text;
+            break;
+          }
+        } catch { /* next */ }
       }
       if (!finalCsv) throw new Error("upstream not available");
 
@@ -267,9 +329,13 @@ export const onRequestGet: PagesFunction = async (ctx) => {
           "cache-control": "no-store",
           "access-control-allow-origin": "*",
           "x-debug-from": "functions-stale",
+          "x-error": e?.message || "upstream failed",
         },
       });
     }
-    return new Response(JSON.stringify({ error: e?.message || "upstream failed" }), { status: 502 });
+    return new Response(JSON.stringify({ error: e?.message || "upstream failed" }), {
+      status: 502,
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+    });
   }
 };
