@@ -1,4 +1,4 @@
-// src/lib/loadStalls.ts
+// src/lib/loadStalls.ts  —— 覆蓋版：同時支援 JSON & CSV
 export type WorkItem = {
   creationTheme?: string;
   themeTags?: string[];
@@ -20,7 +20,7 @@ export type BoothEntry = {
   rawId: string;
   name?: string;
   url?: string;
-  keywords?: string[];  // 攤位層級
+  keywords?: string[];
   items: WorkItem[];
   _rawRows?: Record<string, string>[];
 };
@@ -37,11 +37,8 @@ function csvToRows(text: string): string[][] {
   let row: string[] = [];
   let cell = "";
   let inQuotes = false;
-
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
+    const ch = text[i], next = text[i + 1];
     if (inQuotes) {
       if (ch === '"' && next === '"') { cell += '"'; i++; }
       else if (ch === '"') inQuotes = false;
@@ -49,7 +46,7 @@ function csvToRows(text: string): string[][] {
     } else {
       if (ch === '"') inQuotes = true;
       else if (ch === ",") { row.push(cell); cell = ""; }
-      else if (ch === "\r") { /* skip */ }
+      else if (ch === "\r") { /* noop */ }
       else if (ch === "\n") { row.push(cell); cell = ""; rows.push(row); row = []; }
       else cell += ch;
     }
@@ -58,7 +55,6 @@ function csvToRows(text: string): string[][] {
   rows.push(row);
   return rows;
 }
-
 function parseCSV(text: string): Record<string, string>[] {
   const rows = csvToRows(text);
   if (!rows.length) return [];
@@ -84,29 +80,20 @@ function pick(row: Record<string, string>, keys: string[]): string | undefined {
   return undefined;
 }
 
-export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
-  if (!csvUrl) throw new Error("CSV URL 未設定（請確認 .env 的 PUBLIC_CSV_URL）");
-
-  const res = await fetch(csvUrl);
-  if (!res.ok) throw new Error("CSV 載入失敗（請確認為發布連結，且包含 &output=csv）");
-  const text = await res.text();
-
+// 把 CSV 轉成你原本的結構（保留原邏輯） :contentReference[oaicite:9]{index=9} :contentReference[oaicite:10]{index=10}
+function fromCsvText(text: string): LoadResult {
   const rows = parseCSV(text);
-
   const byId: BoothMap = new Map();
   const all: BoothEntry[] = [];
-
-  // 新增：沿用上一筆攤位編號的機制（因為後續列常留空）
   let lastRawId: string | null = null;
 
   rows.forEach((r) => {
     const rawIdFromRow = pick(r, ["攤位編號"]);
     const rawId = (rawIdFromRow && rawIdFromRow.trim()) || lastRawId || "";
-    if (!rawId) return; // 若一開始就沒有任何 ID，就略過
+    if (!rawId) return;
     lastRawId = rawIdFromRow && rawIdFromRow.trim() ? rawIdFromRow.trim() : lastRawId;
 
     const id = rawId.toUpperCase();
-
     let booth = byId.get(id);
     if (!booth) {
       booth = {
@@ -124,7 +111,6 @@ export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
       byId.set(id, booth);
       all.push(booth);
     } else {
-      // 後續列若有補資料也帶回
       booth.name ||= pick(r, ["社團名稱"]);
       booth.url  ||= pick(r, ["連結"]);
       if (!booth.keywords) {
@@ -180,4 +166,31 @@ export async function loadStalls(csvUrl?: string): Promise<LoadResult> {
   });
 
   return { byId, all };
+}
+
+// === 新：同時支援 JSON & CSV ===
+export async function loadStalls(url: string): Promise<LoadResult> {
+  if (!url) throw new Error("CSV/JSON URL 未設定");
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("資料載入失敗");
+
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  // 伺服器若已轉成 JSON（functions 版）
+  if (ct.includes("application/json")) {
+    const data = await res.json();
+    // byId 若是 Array<[id, BoothEntry]>，可直接 new Map()
+    if (Array.isArray(data?.byId)) {
+      return { byId: new Map<string, BoothEntry>(data.byId), all: data.all || [] };
+    }
+    // 若是物件，也相容處理
+    if (data?.byId && typeof data.byId === "object") {
+      return { byId: new Map(Object.entries<BoothEntry>(data.byId)), all: data.all || [] };
+    }
+    throw new Error("JSON 結構不符：缺少 byId/all");
+  }
+
+  // 否則視為 CSV / 純文字（相容你現有流程）
+  const text = await res.text();
+  return fromCsvText(text);
 }
