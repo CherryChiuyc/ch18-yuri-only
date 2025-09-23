@@ -105,7 +105,10 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
 
   // 讀 CSV
   useEffect(() => {
-    const url = `/api/stalls?_=${Date.now()}`; // 防快取
+    const url = import.meta.env.PROD
+      ? `/api/stalls?_=${Date.now()}`
+      : import.meta.env.PUBLIC_CSV_URL;
+
     loadStalls(url)
       .then(({ byId }) => {
         setBoothMap(byId);
