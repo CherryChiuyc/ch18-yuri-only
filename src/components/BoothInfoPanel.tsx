@@ -118,8 +118,6 @@ export default function BoothInfoPanel({
     return `/event_pics/${key}${exts[Math.min(imgIdx, exts.length - 1)]}`;
   }, [booth, imgIdx]);
 
-  const _boothId = (booth?.rawId || booth?.id || "").toString().trim();
-
   const Header = booth ? (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
