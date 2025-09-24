@@ -498,6 +498,12 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
     }
   }, []);
 
+  const nameLookup = useMemo(() => {
+    const map: Record<string, string> = {};
+    data.forEach(b => { if (b.id) map[b.id] = b.name ?? ""; });
+    return (id: string) => map[id];
+  }, [data]);
+
   return (
     <div>
       {/* ✅ 頂部搜尋列（sticky） */}
@@ -541,7 +547,7 @@ export default function VenueMap({ svgUrl, csvUrl }: Props) {
       </div>
 
       {/* ✅ 我的最愛面板（固定定位，不佔版位） */}
-      <FavoritesPanel onJump={jumpTo} />
+      <FavoritesPanel onJump={jumpTo} nameLookup={nameLookup} />
 
       {/* 手機：body 層級彈窗（固定卡片尺寸；只捲卡片；點空白處可關閉） */}
       {activeSpot &&
