@@ -1,6 +1,7 @@
 // src/components/BoothInfoPanel.tsx
 import { useMemo, useState } from "react";
 import type { BoothEntry, WorkItem } from "../lib/loadStalls";
+import FavoriteButton from "./FavoriteButton";
 
 type Props = {
   booth: BoothEntry | null;
@@ -119,6 +120,11 @@ export default function BoothInfoPanel({
 
   const Header = booth ? (
     <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        {(booth.rawId || booth.id) && (
+          <FavoriteButton boothId={(booth.rawId || booth.id)?.toString().trim()} />
+        )}
+      </div>
       {/* 社團名稱（大標；可點連結） */}
       {booth.name ? (
         booth.url ? (
